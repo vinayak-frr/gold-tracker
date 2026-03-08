@@ -22,7 +22,9 @@ st.markdown("""
 # 2. DATA LOAD & DELETE FUNCTIONS
 def load_data():
     try:
-        return pd.read_csv("gold_tracker.csv", parse_dates=["Date"])
+        df = pd.read_csv("gold_tracker.csv")
+        df['Date'] = pd.to_datetime(df['Date'])
+        return df
     except FileNotFoundError:
         return pd.DataFrame(columns=["Date", "Amount", "Entry_Rate", "Grams"])
 
@@ -30,11 +32,11 @@ def save_data(df):
     df.to_csv("gold_tracker.csv", index=False)
 
 # 3. LIVE MARKET ENGINE (Historical + Live)
-@st.cache_data(ttl=3600) # Cache for 1 hour to keep it fast
+@st.cache_data(ttl=3600) 
 def get_market_history():
     gold = yf.Ticker("GC=F")
     hist = gold.history(period="max")
-    # Convert USD/oz to INR/10g approx for 2026
+    # 2026 Multiplier: USD/oz to INR/10g
     hist['INR_Rate'] = hist['Close'] * 88.5 * 0.3527 * 1.15
     return hist
 
@@ -63,12 +65,13 @@ if st.sidebar.button("LOG ENTRY"):
     st.rerun()
 
 st.sidebar.divider()
-st.sidebar.subheader("🗑️ Delete Last Entry")
-if st.sidebar.button("Remove Recent Record"):
-    if not df.empty:
-        df = df[:-1]
+st.sidebar.subheader("🗑️ Delete Accidental Entry")
+if not df.empty:
+    index_to_delete = st.sidebar.selectbox("Select row to delete", df.index, format_func=lambda x: f"Row {x}: ₹{df.iloc[x]['Amount']} on {df.iloc[x]['Date'].date()}")
+    if st.sidebar.button("Confirm Delete"):
+        df = df.drop(index_to_delete)
         save_data(df)
-        st.sidebar.warning("Last entry deleted.")
+        st.sidebar.warning("Entry removed.")
         st.rerun()
 
 # --- DASHBOARD ---
@@ -86,12 +89,13 @@ if not df.empty:
     # MASTER GRAPH (Two Lines)
     st.subheader("📉 Market Trend vs. Your Entries")
     fig = go.Figure()
-    # Line 1: Market History (Lifetime)
-    fig.add_trace(go.Scatter(x=market_hist.index, y=market_hist['INR_Rate'], name="Market Trend (Gold)", line=dict(color='gray', width=1, dash='dot')))
+    # Line 1: Market History (The "Trend")
+    fig.add_trace(go.Scatter(x=market_hist.index, y=market_hist['INR_Rate'], name="Global Market Trend", line=dict(color='rgba(150, 150, 150, 0.5)', width=1)))
     # Line 2: Your Investments
-    fig.add_trace(go.Scatter(x=df['Date'], y=df['Entry_Rate'], mode='markers+lines', name="Your Entry Price", line=dict(color='#FFD700', width=3), marker=dict(size=10, symbol='diamond')))
+    fig.add_trace(go.Scatter(x=df['Date'], y=df['Entry_Rate'], mode='markers+lines', name="Your Entry Price", line=dict(color='#FFD700', width=3), marker=dict(size=12, symbol='diamond', line=dict(width=2, color='white'))))
     
-    fig.update_layout(template="plotly_dark", xaxis_title="Date", yaxis_title="Price per 10g", hovermode="x unified")
+    fig.update_layout(template="plotly_dark", xaxis_title="Timeline", yaxis_title="Price per 10g", hovermode="x unified", height=600)
+    # Set default zoom to show the last 2 years for trend clarity
     st.plotly_chart(fig, use_container_width=True)
 
     # DATA TABLE
